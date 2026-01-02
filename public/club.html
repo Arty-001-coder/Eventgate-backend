@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Club Network Portal</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #0f172a;
+            --surface: #1e293b;
+            --text: #f8fafc;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: var(--surface);
+            padding: 2rem;
+            border-radius: 12px;
+            width: 400px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: width 0.3s;
+        }
+        .container.wide {
+            width: 800px;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #334155;
+        }
+        .tab {
+            flex: 1;
+            padding: 1rem;
+            text-align: center;
+            cursor: pointer;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .tab.active {
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+            margin-bottom: -2px;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #cbd5e1;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 6px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .hidden { display: none; }
+        .status {
+            margin-top: 1rem;
+            text-align: center;
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .status.success { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+        .status.error { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .mode-switch {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('join')">Join Network</div>
+            <div class="tab" onclick="switchTab('create')">Create Network</div>
+            <div class="tab" onclick="switchTab('check')">Check Status</div>
+        </div>
+
+        <!-- Join Form -->
+        <div id="join-section">
+            <h2 id="join-title">Enter club network</h2>
+            <div class="form-group">
+                <label>Roll Number</label>
+                <input type="text" id="join-roll" placeholder="e.g. 21BCE1234">
+            </div>
+            <div class="form-group">
+                <label>Club Secret</label>
+                <input type="password" id="join-secret" placeholder="Provided by Club Admin">
+            </div>
+            <button onclick="handleJoin()">Connect to Club</button>
+            
+            <div class="status hidden" id="join-status"></div>
+        </div>
+
+        <!-- Create Form -->
+        <div id="create-section" class="hidden">
+            <h2>Request New Club</h2>
+            <div class="form-group">
+                <label>Club Name</label>
+                <input type="text" id="create-name" placeholder="e.g. Robotics Club">
+            </div>
+            <div class="form-group">
+                <label>Proposed Secret</label>
+                <input type="password" id="create-secret" placeholder="For authentication">
+            </div>
+            <div class="form-group">
+                <label>Creator Name</label>
+                <input type="text" id="create-creator" placeholder="Your Name">
+            </div>
+            <button onclick="handleCreate()">Submit Request</button>
+            <div class="status hidden" id="create-status"></div>
+        </div>
+
+        <!-- Check Status Form -->
+        <div id="check-section" class="hidden">
+            <h2>Check Request Status</h2>
+            <div class="form-group">
+                <label>Club Secret</label>
+                <input type="password" id="check-secret" placeholder="Enter secret used in request">
+            </div>
+            <button onclick="handleCheckStatus()">Check Status</button>
+            <div class="status hidden" id="check-status"></div>
+            <div id="check-results" style="margin-top: 1rem;"></div>
+        </div>
+
+        <!-- Terminal Section -->
+        <div id="terminal-section" class="hidden">
+             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #334155; padding-bottom:10px;">
+                <h2 style="margin:0">📟 Club Terminal</h2>
+                <button onclick="handleDisconnect()" style="width:auto; padding:5px 10px; background:#ef4444;">Disconnect</button>
+             </div>
+
+             <div style="background:#0f172a; padding:15px; border-radius:6px; font-family:monospace; margin-bottom:20px; color:#38bdf8;">
+                <div>> CLUB_ID: <span id="term-club-id"></span></div>
+                <div>> DEVICE_ID: <span id="term-device-id"></span></div>
+                <div>> STATUS: <span id="term-status"></span></div>
+             </div>
+
+             <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Event Creator -->
+                <div>
+                    <h3>Create Event</h3>
+                    <div class="form-group"><input id="evt-name" placeholder="Event Name"></div>
+                    <div class="form-group"><input id="evt-date" type="datetime-local"></div>
+                    <div class="form-group"><input id="evt-venue" placeholder="Venue"></div>
+                    <div class="form-group"><textarea id="evt-desc" placeholder="Description" style="width:100%; height:80px; background:#0f172a; color:white; border:1px solid #334155; padding:5px; border-radius:6px;"></textarea></div>
+                    <button onclick="handleAddEvent()" style="background:#22c55e;">Add to Local Store</button>
+                </div>
+
+                <!-- Local Store -->
+                <div style="display:flex; flex-direction:column; gap:20px;">
+                     <!-- Default/Unsynced -->
+                     <div>
+                         <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <h3>📝 Draft Events</h3>
+                            <button onclick="handlePushData()" style="width:auto; padding:5px 10px; font-size:0.8rem;">☁️ Push All</button>
+                         </div>
+                         <div id="local-events-list" style="height:150px; overflow-y:auto; background:#0f172a; border-radius:6px; padding:10px; border: 1px dashed #475569;">
+                            <div style="color:#64748b; text-align:center; padding-top:20px;">No drafts.</div>
+                         </div>
+                     </div>
+
+                     <!-- Synced -->
+                     <div>
+                         <h3>🌐 Published on Network</h3>
+                         <div id="synced-events-list" style="height:150px; overflow-y:auto; background:#0f172a; border-radius:6px; padding:10px; border: 1px solid #334155;">
+                            <div style="color:#64748b; text-align:center; padding-top:20px;">No published events.</div>
+                         </div>
+                     </div>
+                     
+                     <div id="sync-status" style="text-align:right; font-size:0.8rem; color:#94a3b8; margin-top:-10px;">Idle</div>
+                </div>
+             </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket(`ws://${location.host}`);
+        let currentTab = 'join';
+        let localClubData = {
+            club_id: null,
+            events: [] // { event_id, event_name, event_timestamp, event_description, event_venue, synced }
+        };
+
+        const STORAGE_KEY_PREFIX = 'club_network_data_';
+
+        function loadLocalData(clubId) {
+            const json = localStorage.getItem(STORAGE_KEY_PREFIX + clubId);
+            if (json) {
+                try {
+                    const data = JSON.parse(json);
+                    if (Array.isArray(data)) return data;
+                } catch (e) {
+                    console.error("Failed to load local data", e);
+                }
+            }
+            return [];
+        }
+
+        function saveLocalData() {
+            if (!localClubData.club_id) return;
+            localStorage.setItem(STORAGE_KEY_PREFIX + localClubData.club_id, JSON.stringify(localClubData.events));
+        }
+
+        socket.onopen = () => console.log('Connected to server');
+        
+        socket.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            console.log('Received:', msg);
+
+            // Handle Sync Request from Server
+            if (msg.kind === 'fetch_data') {
+                 console.log("📥 Server requested data sync...", msg);
+                 
+                 // Simulate processing time
+                 document.getElementById('sync-status').textContent = "Uploading...";
+                 document.getElementById('sync-status').style.color = "#facc15";
+
+                 setTimeout(() => {
+                     // Mark all as synced right before sending
+                     localClubData.events.forEach(e => e.synced = true);
+                     saveLocalData(); // Persist the 'synced' state
+                     renderLocalEvents();
+
+                     socket.send(JSON.stringify({
+                        kind: 'club_data',
+                        request_id: msg.request_id,
+                        club_id: localClubData.club_id,
+                        events: localClubData.events
+                     }));
+                     console.log("📤 Data sent to server");
+                     document.getElementById('sync-status').textContent = "Synced Just Now";
+                     document.getElementById('sync-status').style.color = "#4ade80";
+                 }, 500); // 500ms latency sim
+                 return;
+            }
+
+            if (msg.kind === 'handshake_response') {
+                const statusEl = document.getElementById('join-status');
+                statusEl.classList.remove('hidden');
+                if (msg.success) {
+                    statusEl.className = 'status success';
+                    statusEl.textContent = `Connected! Device ID: ${msg.device_id}`;
+                    
+                    // Initialize Terminal
+                    localClubData.club_id = msg.club_id;
+                    showTerminal(msg);
+                } else {
+                    statusEl.className = 'status error';
+                    statusEl.textContent = msg.error || 'Connection failed';
+                }
+            } else if (msg.error) {
+                const activeStatus = currentTab === 'join' ? 'join-status' : 'create-status';
+                const el = document.getElementById(activeStatus);
+                el.classList.remove('hidden');
+                el.className = 'status error';
+                el.textContent = msg.error;
+            } else if (msg.message && currentTab === 'create') {
+                 const el = document.getElementById('create-status');
+                 el.classList.remove('hidden');
+                 el.className = 'status success';
+                 el.textContent = msg.message;
+            } else if (msg.kind === 'request_status_response') {
+                const resultsEl = document.getElementById('check-results');
+                resultsEl.innerHTML = '';
+                
+                if (msg.requests.length === 0) {
+                    resultsEl.innerHTML = '<div class="status error">No requests found with this secret.</div>';
+                    return;
+                }
+
+                msg.requests.forEach(req => {
+                    const div = document.createElement('div');
+                    div.style.background = '#283548';
+                    div.style.padding = '10px';
+                    div.style.marginBottom = '10px';
+                    div.style.borderRadius = '6px';
+                    
+                    let statusColor = '#facc15'; // yellow/pending
+                    if (req.status === 'approved') statusColor = '#4ade80';
+                    if (req.status === 'rejected') statusColor = '#f87171';
+
+                    div.innerHTML = `
+                        <div style="font-weight:bold">${req.club_name}</div>
+                        <div style="font-size:0.9em; color:#94a3b8">Creator: ${req.creator_name}</div>
+                        <div style="margin-top:5px; font-weight:bold; color:${statusColor}">
+                            Status: ${req.status.toUpperCase()}
+                        </div>
+                    `;
+                    resultsEl.appendChild(div);
+                });
+            }
+        };
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
+            
+            if (tab === 'join') {
+                document.getElementById('join-section').classList.remove('hidden');
+                document.getElementById('create-section').classList.add('hidden');
+                document.getElementById('check-section').classList.add('hidden');
+            } else if (tab === 'create') {
+                document.getElementById('join-section').classList.add('hidden');
+                document.getElementById('create-section').classList.remove('hidden');
+                document.getElementById('check-section').classList.add('hidden');
+            } else {
+                document.getElementById('join-section').classList.add('hidden');
+                document.getElementById('create-section').classList.add('hidden');
+                document.getElementById('check-section').classList.remove('hidden');
+            }
+        }
+
+        function handleJoin() {
+            const roll = document.getElementById('join-roll').value.trim().toUpperCase();
+            const secret = document.getElementById('join-secret').value;
+            
+            if (!roll || !secret) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            socket.send(JSON.stringify({
+                kind: 'handshake',
+                club_secret: secret,
+                roll_no: roll
+            }));
+            
+            const statusEl = document.getElementById('join-status');
+            statusEl.classList.remove('hidden');
+            statusEl.className = 'status';
+            statusEl.textContent = 'Authenticating...';
+        }
+
+        function handleCreate() {
+            const name = document.getElementById('create-name').value;
+            const secret = document.getElementById('create-secret').value;
+            const creator = document.getElementById('create-creator').value;
+
+            if (!name || !secret || !creator) {
+                alert('Please fill all fields');
+                return;
+            }
+
+            socket.send(JSON.stringify({
+                kind: 'request_creation',
+                club_name: name,
+                club_secret: secret,
+                creator_name: creator
+            }));
+
+            const statusEl = document.getElementById('create-status');
+            statusEl.classList.remove('hidden');
+            statusEl.className = 'status';
+            statusEl.textContent = 'Sending request...';
+        }
+
+        function handleCheckStatus() {
+            const secret = document.getElementById('check-secret').value;
+            if (!secret) {
+                alert('Please enter club secret');
+                return;
+            }
+
+            socket.send(JSON.stringify({
+                kind: 'check_request_status',
+                club_secret: secret
+            }));
+            
+            document.getElementById('check-results').innerHTML = '<div style="text-align:center; color:#94a3b8">Fetching...</div>';
+        }
+
+        // --- Terminal Functions ---
+
+        function showTerminal(authMsg) {
+            // Initialize Terminal
+            localClubData.club_id = authMsg.club_id;
+            localClubData.events = loadLocalData(authMsg.club_id); // Load from storage
+            renderLocalEvents(); // Render loaded events
+
+            document.querySelector('.container').classList.add('wide');
+            document.querySelector('.tabs').style.display = 'none';
+            document.getElementById('join-section').style.display = 'none';
+            document.getElementById('terminal-section').classList.remove('hidden');
+
+            document.getElementById('term-club-id').textContent = authMsg.club_id;
+            document.getElementById('term-device-id').textContent = authMsg.device_id;
+            document.getElementById('term-status').textContent = authMsg.active ? "ACTIVE (Authoritative)" : "STANDBY (Read-Only)";
+            
+            if (authMsg.active) {
+                document.getElementById('term-status').style.color = "#4ade80";
+            } else {
+                document.getElementById('term-status').style.color = "#facc15";
+            }
+        }
+
+        function handleAddEvent() {
+            const name = document.getElementById('evt-name').value;
+            const dateVal = document.getElementById('evt-date').value;
+            const venue = document.getElementById('evt-venue').value;
+            const desc = document.getElementById('evt-desc').value;
+
+            if (!name || !dateVal || !venue) {
+                alert("Name, Date and Venue are required");
+                return;
+            }
+
+            const evtId = 'evt-' + Math.random().toString(36).substr(2, 9);
+            const newEvent = {
+                event_id: evtId,
+                event_name: name,
+                event_timestamp: new Date(dateVal).getTime(),
+                event_venue: venue,
+                event_description: desc,
+                synced: false
+            };
+
+            localClubData.events.push(newEvent);
+            saveLocalData(); // Save to storage
+            renderLocalEvents();
+            
+            // Clear inputs
+            document.getElementById('evt-name').value = '';
+            document.getElementById('evt-venue').value = '';
+            document.getElementById('evt-desc').value = '';
+            
+            document.getElementById('sync-status').textContent = "Unsynced Changes";
+            document.getElementById('sync-status').style.color = "#facc15";
+        }
+
+        function renderLocalEvents() {
+            const draftContainer = document.getElementById('local-events-list');
+            const syncedContainer = document.getElementById('synced-events-list');
+            
+            draftContainer.innerHTML = '';
+            syncedContainer.innerHTML = '';
+
+            const drafts = localClubData.events.filter(e => !e.synced);
+            const published = localClubData.events.filter(e => e.synced);
+
+            // Render Drafts
+            if (drafts.length === 0) {
+                draftContainer.innerHTML = '<div style="color:#64748b; text-align:center; padding-top:20px;">No drafts.</div>';
+            } else {
+                drafts.forEach(evt => {
+                    const div = document.createElement('div');
+                    div.style.background = '#334155';
+                    div.style.marginBottom = '8px';
+                    div.style.padding = '8px';
+                    div.style.borderRadius = '4px';
+                    div.style.fontSize = '0.9rem';
+                    div.innerHTML = `
+                        <div style="font-weight:bold; color:#e2e8f0;">${evt.event_name} <span style="font-size:0.7em; color:#94a3b8">(Draft)</span></div>
+                        <div style="color:#cbd5e1; font-size:0.8rem;">${new Date(evt.event_timestamp).toLocaleDateString()} @ ${evt.event_venue}</div>
+                    `;
+                    draftContainer.appendChild(div);
+                });
+            }
+
+            // Render Published
+            if (published.length === 0) {
+                syncedContainer.innerHTML = '<div style="color:#64748b; text-align:center; padding-top:20px;">No published events.</div>';
+            } else {
+                published.forEach(evt => {
+                    const div = document.createElement('div');
+                    div.style.background = '#1e293b';
+                    div.style.marginBottom = '8px';
+                    div.style.padding = '8px';
+                    div.style.borderRadius = '4px';
+                    div.style.fontSize = '0.9rem';
+                    div.style.display = 'flex';
+                    div.style.justifyContent = 'space-between';
+                    div.style.alignItems = 'center';
+                    
+                    div.innerHTML = `
+                        <div>
+                            <div style="font-weight:bold; color:#4ade80;">${evt.event_name}</div>
+                            <div style="color:#94a3b8; font-size:0.8rem;">${new Date(evt.event_timestamp).toLocaleDateString()}</div>
+                        </div>
+                        <button onclick="handleDeleteEvent('${evt.event_id}')" style="background:#ef4444; width:auto; padding:4px 8px; font-size:0.8rem;">Delete</button>
+                    `;
+                    syncedContainer.appendChild(div);
+                });
+            }
+        }
+        
+        function handleDeleteEvent(evtId) {
+             if (!confirm("Are you sure you want to delete this event from the network?")) return;
+             
+             // Remove from local store
+             localClubData.events = localClubData.events.filter(e => e.event_id !== evtId);
+             saveLocalData(); // Save deletions
+             renderLocalEvents();
+             
+             // Announce change to server to sync the deletion
+             handlePushData();
+        }
+
+        function handlePushData() {
+             if (!localClubData.club_id) return;
+             
+             console.log("📣 Broadcasting DATA_CHANGED...");
+             socket.send(JSON.stringify({
+                 kind: 'DATA_CHANGED',
+                 club_id: localClubData.club_id
+             }));
+        }
+
+        function handleDisconnect() {
+            location.reload();
+        }
+    </script>
+</body>
+</html>

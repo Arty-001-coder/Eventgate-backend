@@ -128,55 +128,59 @@ export function intialiseDB() {
     CREATE INDEX IF NOT EXISTS idx_adm_req_council_id ON admin_access_requests(council_id);
   `);
   
-  // Clear all data from all tables except council
-  console.log("🧹 Clearing all data from databases...");
-  
-  // Clear Static DB tables (except council)
-  staticDb.exec(`
-    DELETE FROM club_members;
-    DELETE FROM admin_access;
-    DELETE FROM club_identity;
-  `);
-  
-  // Clear Dynamic DB tables
-  dynamicDb.exec(`
-    DELETE FROM club_events;
-    DELETE FROM online_members;
-    DELETE FROM club_creation_requests;
-    DELETE FROM club_join_requests;
-    DELETE FROM admin_access_requests;
-  `);
-  
-  // Insert STC council
-  const stcCouncilId = uuidv4();
+  // Initialize STC council if it doesn't exist
   try {
-    // Clear existing councils first
-    staticDb.exec(`DELETE FROM council`);
+    // Check if STC council already exists
+    const existingCouncil = staticDb.prepare("SELECT council_id FROM council WHERE council_name = ? AND council_secret = ?").get('STC', 'STCsecret101') as { council_id?: string } | undefined;
     
-    // Insert STC council
-    staticDb.prepare(`
-      INSERT INTO council (council_id, council_name, council_secret)
-      VALUES (?, ?, ?)
-    `).run(stcCouncilId, 'STC', 'STCsecret101');
-    
-    console.log(`✅ Inserted STC council with ID: ${stcCouncilId}`);
-    
-    // Insert admin access for Antrin Maji
-    try {
+    if (!existingCouncil) {
+      // Insert STC council
+      const stcCouncilId = uuidv4();
       staticDb.prepare(`
-        INSERT INTO admin_access (council_id, name, roll_no, last_login)
-        VALUES (?, ?, ?, ?)
-      `).run(stcCouncilId, 'Antrin Maji', 'IMS24038', Date.now());
+        INSERT INTO council (council_id, council_name, council_secret)
+        VALUES (?, ?, ?)
+      `).run(stcCouncilId, 'STC', 'STCsecret101');
       
-      console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
-    } catch (e: any) {
-      console.error("❌ Failed to insert admin access:", e);
+      console.log(`✅ Inserted STC council with ID: ${stcCouncilId}`);
+      
+      // Insert admin access for Antrin Maji
+      try {
+        staticDb.prepare(`
+          INSERT INTO admin_access (council_id, name, roll_no, last_login)
+          VALUES (?, ?, ?, ?)
+        `).run(stcCouncilId, 'Antrin Maji', 'IMS24038', Date.now());
+        
+        console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
+      } catch (e: any) {
+        if (e.message && !e.message.includes('UNIQUE constraint')) {
+          console.error("❌ Failed to insert admin access:", e);
+        }
+      }
+    } else {
+      // Check if Antrin Maji admin access exists
+      const existingAdmin = staticDb.prepare("SELECT roll_no FROM admin_access WHERE council_id = ? AND roll_no = ?").get(existingCouncil.council_id, 'IMS24038') as { roll_no?: string } | undefined;
+      
+      if (!existingAdmin) {
+        try {
+          staticDb.prepare(`
+            INSERT INTO admin_access (council_id, name, roll_no, last_login)
+            VALUES (?, ?, ?, ?)
+          `).run(existingCouncil.council_id, 'Antrin Maji', 'IMS24038', Date.now());
+          
+          console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
+        } catch (e: any) {
+          if (e.message && !e.message.includes('UNIQUE constraint')) {
+            console.error("❌ Failed to insert admin access:", e);
+          }
+        }
+      }
+      console.log(`ℹ️ STC council already exists, skipping insertion`);
     }
   } catch (e: any) {
-    console.error("❌ Failed to insert STC council:", e);
+    console.error("❌ Failed to initialize STC council:", e);
   }
   
-  console.log("✅ Database reset complete - only STC council remains with Antrin Maji as admin");
+  console.log("✅ Database initialization complete");
   
   return { staticDb, dynamicDb };
 }

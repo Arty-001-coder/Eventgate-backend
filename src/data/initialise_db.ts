@@ -113,6 +113,7 @@ export function intialiseDB() {
       request_id TEXT PRIMARY KEY,
       club_name TEXT NOT NULL,
       club_secret TEXT NOT NULL,
+      admin_secret TEXT,
       creator_name TEXT NOT NULL,
       creator_rollNo TEXT NOT NULL,
       status TEXT CHECK(status IN ('pending', 'accepted', 'rejected')) DEFAULT 'pending',
@@ -120,7 +121,19 @@ export function intialiseDB() {
     );
     CREATE INDEX IF NOT EXISTS idx_req_secret ON club_creation_requests(club_secret);
     CREATE INDEX IF NOT EXISTS idx_req_secret_status ON club_creation_requests(club_secret, status);
-    
+  `);
+
+  // Add admin_secret to club_creation_requests (migration)
+  try {
+      dynamicDb.exec(`ALTER TABLE club_creation_requests ADD COLUMN admin_secret TEXT`);
+      console.log("✅ Added admin_secret column to club_creation_requests table");
+  } catch (e: any) {
+      if (e.message && !e.message.includes('duplicate column')) {
+        console.log("ℹ️ admin_secret column migration (requests):", e.message);
+      }
+  }
+
+  dynamicDb.exec(`
     CREATE TABLE IF NOT EXISTS club_join_requests (
       request_id TEXT PRIMARY KEY,
       club_id TEXT NOT NULL,

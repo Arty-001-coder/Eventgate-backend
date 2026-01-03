@@ -308,8 +308,8 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
 
     // 2. Create Club Identity
     const newClubId = uuidv4();
-    // Generate admin_secret (using UUID for uniqueness)
-    const adminSecret = uuidv4();
+    // Use requested admin_secret or Generate one (using UUID for uniqueness) if missing
+    const adminSecret = request.admin_secret || uuidv4();
     try {
         staticDb.prepare("INSERT INTO club_identity (club_id, club_name, club_secret, admin_secret) VALUES (?, ?, ?, ?)").run(newClubId, request.club_name, request.club_secret, adminSecret);
         console.log(`✅ Created new club: ${request.club_name} (${newClubId})`);
@@ -755,7 +755,7 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
       }
   },
   [EventType.Create_Club_Network]: (ctx, payload) => {
-      const { council_id, club_name, creator_name, creator_roll, club_secret, timestamp } = payload;
+      const { council_id, club_name, creator_name, creator_roll, club_secret, admin_secret, timestamp } = payload;
       console.log(`[Event] Create_Club_Network received for ${club_name}`);
       
       // 1. Validate Council
@@ -784,8 +784,8 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
       const reqId = uuidv4();
       try {
           // Note: Ignoring council_id storage as per current schema, using it only for authorized routing/validation.
-          dynamicDb.prepare("INSERT INTO club_creation_requests (request_id, club_name, club_secret, creator_name, creator_rollNo, status) VALUES (?, ?, ?, ?, ?, 'pending')")
-                   .run(reqId, club_name, club_secret, creator_name, creator_roll);
+          dynamicDb.prepare("INSERT INTO club_creation_requests (request_id, club_name, club_secret, admin_secret, creator_name, creator_rollNo, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')")
+                   .run(reqId, club_name, club_secret, admin_secret, creator_name, creator_roll);
                    
           console.log(`✅ Club Creation Request Sent: ${reqId}`);
           

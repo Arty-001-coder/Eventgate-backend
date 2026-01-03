@@ -123,10 +123,34 @@ export function broadcastToClub(clubId: string, message: any) {
 }
 // --------------------------------
 
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 
 export function startServer() {
   const server = http.createServer((req, res) => {
+    // Health check endpoint
+    if (req.url === "/health" || req.url === "/health/") {
+      // Add CORS headers
+      res.writeHead(200, { 
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      });
+      res.end(JSON.stringify({ status: "ok", timestamp: Date.now() }));
+      return;
+    }
+
+    // Handle CORS preflight for health endpoint
+    if (req.method === "OPTIONS" && (req.url === "/health" || req.url === "/health/")) {
+      res.writeHead(200, {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      });
+      res.end();
+      return;
+    }
+
     // Serve static files from public/
     const publicDir = path.join(__dirname, "../../public");
     

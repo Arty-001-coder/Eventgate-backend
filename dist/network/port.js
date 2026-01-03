@@ -120,9 +120,15 @@ function broadcastToClub(clubId, message) {
     }
 }
 // --------------------------------
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 function startServer() {
     const server = http_1.default.createServer((req, res) => {
+        // Health check endpoint
+        if (req.url === "/health" || req.url === "/health/") {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ status: "ok", timestamp: Date.now() }));
+            return;
+        }
         // Serve static files from public/
         const publicDir = path_1.default.join(__dirname, "../../public");
         let filePath = path_1.default.join(publicDir, req.url === "/" ? "index.html" : req.url);

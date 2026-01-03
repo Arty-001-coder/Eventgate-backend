@@ -274,8 +274,8 @@ const handlers = {
         }
         // 2. Create Club Identity
         const newClubId = (0, uuid_1.v4)();
-        // Generate admin_secret (using UUID for uniqueness)
-        const adminSecret = (0, uuid_1.v4)();
+        // Use requested admin_secret or Generate one (using UUID for uniqueness) if missing
+        const adminSecret = request.admin_secret || (0, uuid_1.v4)();
         try {
             initialise_db_1.staticDb.prepare("INSERT INTO club_identity (club_id, club_name, club_secret, admin_secret) VALUES (?, ?, ?, ?)").run(newClubId, request.club_name, request.club_secret, adminSecret);
             console.log(`✅ Created new club: ${request.club_name} (${newClubId})`);
@@ -664,7 +664,7 @@ const handlers = {
         }
     },
     [EventType.Create_Club_Network]: (ctx, payload) => {
-        const { council_id, club_name, creator_name, creator_roll, club_secret, timestamp } = payload;
+        const { council_id, club_name, creator_name, creator_roll, club_secret, admin_secret, timestamp } = payload;
         console.log(`[Event] Create_Club_Network received for ${club_name}`);
         // 1. Validate Council
         const council = initialise_db_1.staticDb.prepare("SELECT council_id FROM council WHERE council_id = ?").get(council_id);
@@ -689,8 +689,8 @@ const handlers = {
         const reqId = (0, uuid_1.v4)();
         try {
             // Note: Ignoring council_id storage as per current schema, using it only for authorized routing/validation.
-            initialise_db_1.dynamicDb.prepare("INSERT INTO club_creation_requests (request_id, club_name, club_secret, creator_name, creator_rollNo, status) VALUES (?, ?, ?, ?, ?, 'pending')")
-                .run(reqId, club_name, club_secret, creator_name, creator_roll);
+            initialise_db_1.dynamicDb.prepare("INSERT INTO club_creation_requests (request_id, club_name, club_secret, admin_secret, creator_name, creator_rollNo, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')")
+                .run(reqId, club_name, club_secret, admin_secret, creator_name, creator_roll);
             console.log(`✅ Club Creation Request Sent: ${reqId}`);
             if (ctx.socket.readyState === ws_1.default.OPEN) {
                 ctx.socket.send(JSON.stringify({ kind: "creation_request_sent", request_id: reqId }));

@@ -15,11 +15,10 @@ exports.broadcastToClub = broadcastToClub;
 exports.startServer = startServer;
 // src/network/port.ts
 const http_1 = __importDefault(require("http"));
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
 const ws_1 = require("ws");
 const router_1 = require("./router");
 const state_1 = require("../clubs/state");
+const state_2 = require("../clubs/state");
 // ... (existing code)
 // --- Socket Management ---
 const memberSockets = new Map(); // memberId -> WS
@@ -125,35 +124,29 @@ function startServer() {
     const server = http_1.default.createServer((req, res) => {
         // Health check endpoint
         if (req.url === "/health" || req.url === "/health/") {
-            res.writeHead(200, { "Content-Type": "application/json" });
+            // Add CORS headers
+            res.writeHead(200, {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            });
             res.end(JSON.stringify({ status: "ok", timestamp: Date.now() }));
             return;
         }
-        // Serve static files from public/
-        const publicDir = path_1.default.join(__dirname, "../../public");
-        let filePath = path_1.default.join(publicDir, req.url === "/" ? "index.html" : req.url);
-        // Basic security check to prevent directory traversal
-        if (!filePath.startsWith(publicDir)) {
-            res.writeHead(403);
-            res.end("Forbidden");
+        // Handle CORS preflight for health endpoint
+        if (req.method === "OPTIONS" && (req.url === "/health" || req.url === "/health/")) {
+            res.writeHead(200, {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            });
+            res.end();
             return;
         }
-        fs_1.default.readFile(filePath, (err, content) => {
-            if (err) {
-                if (err.code === "ENOENT") {
-                    res.writeHead(404);
-                    res.end("Not Found");
-                }
-                else {
-                    res.writeHead(500);
-                    res.end("Server Error");
-                }
-            }
-            else {
-                res.writeHead(200, { "Content-Type": "text/html" });
-                res.end(content);
-            }
-        });
+        // All other HTTP requests return 404 (this server only handles WebSocket and health checks)
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
     });
     const wss = new ws_1.WebSocketServer({ server });
     console.log(`🚀 Server listening on port ${PORT} (HTTP + WS)`);
@@ -173,8 +166,8 @@ function startServer() {
             const events = (0, state_1.getAllClubEvents)();
             // Since we are in the port, we might not have direct access to getAllAuthRequests unless exported from state.ts
             // I need to check if I can import it. Assuming I update the import.
-            const authRequests = require("../clubs/state").getAllAuthRequests();
-            const registrations = require("../clubs/state").getAllRegistrations();
+            const authRequests = (0, state_2.getAllAuthRequests)();
+            const registrations = (0, state_2.getAllRegistrations)();
             console.log(`DEBUG: Sending state to new client`);
             socket.send(JSON.stringify({
                 kind: "full_state",

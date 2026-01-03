@@ -93,8 +93,8 @@ var EventType;
 // Helper to broadcast state update
 function broadcastStateUpdate() {
     const events = (0, state_1.getAllClubEvents)();
-    const authRequests = require("../clubs/state").getAllAuthRequests();
-    const registrations = require("../clubs/state").getAllRegistrations();
+    const authRequests = (0, state_1.getAllAuthRequests)();
+    const registrations = (0, state_1.getAllRegistrations)();
     (0, port_1.broadcastToAdmins)({
         kind: "full_state",
         events,

@@ -1,12 +1,13 @@
 // src/network/port.ts
 import http from "http";
-import fs from "fs";
-import path from "path";
 import { WebSocketServer, WebSocket } from "ws";
 import { routeMessage } from "./router";
 
 import { getAllClubEvents } from "../clubs/state";
-
+import {
+  getAllAuthRequests,
+  getAllRegistrations
+} from "../clubs/state";
 export type ConnectionContext = {
   role: "admin" | "club" | "calendar_viewer" | null;
   clubId: string | null;
@@ -151,32 +152,9 @@ export function startServer() {
       return;
     }
 
-    // Serve static files from public/
-    const publicDir = path.join(__dirname, "../../public");
-    
-    let filePath = path.join(publicDir, req.url === "/" ? "index.html" : req.url!);
-    
-    // Basic security check to prevent directory traversal
-    if (!filePath.startsWith(publicDir)) {
-      res.writeHead(403);
-      res.end("Forbidden");
-      return;
-    }
-
-    fs.readFile(filePath, (err, content) => {
-      if (err) {
-        if (err.code === "ENOENT") {
-           res.writeHead(404);
-           res.end("Not Found");
-        } else {
-           res.writeHead(500);
-           res.end("Server Error");
-        }
-      } else {
-        res.writeHead(200, { "Content-Type": "text/html" });
-        res.end(content);
-      }
-    });
+    // All other HTTP requests return 404 (this server only handles WebSocket and health checks)
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("Not Found");
   });
 
   const wss = new WebSocketServer({ server });
@@ -201,8 +179,8 @@ export function startServer() {
         const events = getAllClubEvents();
         // Since we are in the port, we might not have direct access to getAllAuthRequests unless exported from state.ts
         // I need to check if I can import it. Assuming I update the import.
-        const authRequests = require("../clubs/state").getAllAuthRequests(); 
-        const registrations = require("../clubs/state").getAllRegistrations();
+        const authRequests = getAllAuthRequests();
+        const registrations = getAllRegistrations();
 
         console.log(`DEBUG: Sending state to new client`);
         socket.send(JSON.stringify({

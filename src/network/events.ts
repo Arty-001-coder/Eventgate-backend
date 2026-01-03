@@ -3,7 +3,8 @@ import { dynamicDb, staticDb } from "../data/initialise_db";
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
 import { fetchClubData } from "../clubs/fetch-data";
-import { getAllClubEvents, cacheClubState, getMonitorData } from "../clubs/state";
+import { getAllClubEvents, cacheClubState, getMonitorData, getAllAuthRequests, getAllRegistrations } from "../clubs/state";
+
 
 // Cleanup expired events every hour
 // Removing events 24 hours after their event_date
@@ -106,8 +107,8 @@ export interface NetworkEvent {
 // Helper to broadcast state update
 function broadcastStateUpdate() {
     const events = getAllClubEvents();
-    const authRequests = require("../clubs/state").getAllAuthRequests();
-    const registrations = require("../clubs/state").getAllRegistrations();
+    const authRequests = getAllAuthRequests();
+    const registrations = getAllRegistrations();
     broadcastToAdmins({
         kind: "full_state",
         events,

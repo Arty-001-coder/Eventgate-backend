@@ -213,6 +213,7 @@ export function getMonitorData(clubId: string): MonitorData {
 
     // 1. Authorized Users (Club Members)
     const members = staticDb.prepare("SELECT member_id, name, roll_no, last_login FROM club_members WHERE club_id = ?").all(clubId) as any[];
+    console.log(`DEBUG: Fetched ${members.length} members for monitor. Sample lastLogin:`, members[0]?.lastLogin);
     
     // Check online status
     const onlineMembers = new Set(

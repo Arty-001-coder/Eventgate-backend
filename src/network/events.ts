@@ -5,6 +5,33 @@ import { v4 as uuidv4 } from "uuid";
 import { fetchClubData } from "../clubs/fetch-data";
 import { getAllClubEvents, cacheClubState, getMonitorData } from "../clubs/state";
 
+// Cleanup expired events every hour
+// Removing events 24 hours after their event_date
+function cleanupExpiredEvents() {
+    console.log("🧹 Running cleanup for expired events...");
+    try {
+        // Calculate date for Yesterday (Current Date - 1 Day)
+        // Format: YYYY-MM-DD
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        
+        // Delete events where event_date < yesterday (meaning 24h passed since that date)
+        // Note: event_date is YYYY-MM-DD string
+        const result = dynamicDb.prepare("DELETE FROM club_events WHERE event_date < ?").run(yesterday);
+        
+        if (result.changes > 0) {
+            console.log(`🧹 Deleted ${result.changes} expired events (older than ${yesterday})`);
+            broadcastStateUpdate();
+        }
+    } catch (e) {
+        console.error("Failed to cleanup expired events:", e);
+    }
+}
+
+// Start Cleanup Interval (Every hour)
+setInterval(cleanupExpiredEvents, 60 * 60 * 1000);
+// Run once on startup
+setTimeout(cleanupExpiredEvents, 5000);
+
 // Helper for sync workflow
 function performSync(clubId: string) {
   console.log(`🔄 Syncing data for club ${clubId}...`);
@@ -40,6 +67,12 @@ export enum EventType {
   Get_Calendar_Events = "Get_Calendar_Events",
   Get_Councils = "Get_Councils",
   
+
+  
+  // New Granular Events
+  Event_Created = "Event_Created",
+  Event_Deleted = "Event_Deleted",
+  
   // New Events
   Admin_Access_Request = "Admin_Access_Request",
   Admin_Access_Required = "Admin_Access_Required",
@@ -54,7 +87,15 @@ export enum EventType {
 
   // Monitor Events
   Monitor_Subscribe = "Monitor_Subscribe",
-  Monitor_State = "Monitor_State"
+  Monitor_State = "Monitor_State",
+  
+  // Logout
+  Member_Logout = "Member_Logout",
+
+  // Admin Validation
+  Validate_Club_Admin = "Validate_Club_Admin",
+  Club_Admin_Valid = "Club_Admin_Valid",
+  Club_Admin_Invalid = "Club_Admin_Invalid"
 }
 
 export interface NetworkEvent {
@@ -79,6 +120,28 @@ export function broadcastMonitorUpdate(clubId: string) {
     console.log(`📢 Broadcasting Monitor Update for ${clubId}`);
     const data = getMonitorData(clubId);
     broadcastToClub(clubId, { kind: "Monitor_State", data });
+}
+
+// Helper to broadcast club events to the specific club
+// Helper to get club events payload
+function getClubEventsPayload(clubId: string) {
+    const events = dynamicDb.prepare("SELECT * FROM club_events WHERE club_id = ? ORDER BY rowid DESC").all(clubId);
+    return events.map((e: any) => ({
+        event_id: e.event_id,
+        event_data: typeof e.event_data === 'string' ? JSON.parse(e.event_data) : e.event_data,
+        status: e.status
+    }));
+}
+
+// Helper to broadcast club events to the specific club
+function broadcastClubEvents(clubId: string) {
+    console.log(`📢 Broadcasting Events Update for ${clubId}`);
+    try {
+        const payload = getClubEventsPayload(clubId);
+        broadcastToClub(clubId, { kind: "Club_Events_List", events: payload });
+    } catch (e) {
+        console.error(`❌ Failed to broadcast events for ${clubId}:`, e);
+    }
 }
 
 // Stub handlers for now
@@ -107,6 +170,39 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
    [EventType.Monitor_State]: (ctx, payload) => {
        // Outgoing only
    },
+   [EventType.Member_Logout]: (ctx, payload) => {
+      const { club_id, member_id } = payload;
+      console.log(`[Event] Member_Logout detected for ${member_id} in ${club_id}`);
+      
+      try {
+        dynamicDb.prepare("DELETE FROM online_members WHERE club_id = ? AND member_id = ?").run(club_id, member_id);
+        console.log(`✅ Removed member ${member_id} from online_members`);
+        
+        broadcastMonitorUpdate(club_id);
+      } catch(e) {
+        console.error("Failed to process logout:", e);
+      }
+   },
+   [EventType.Validate_Club_Admin]: (ctx, payload) => {
+       const { club_id, secret } = payload;
+       console.log(`[Event] Validating admin for club ${club_id}`);
+       
+       const club = staticDb.prepare("SELECT admin_secret FROM club_identity WHERE club_id = ?").get(club_id) as { admin_secret: string } | undefined;
+       
+       if (club && club.admin_secret === secret) {
+           console.log(`✅ Admin Access Validated for ${club_id} (Validated secret)`);
+           ctx.socket.send(JSON.stringify({ kind: "Club_Admin_Valid", club_id }));
+           
+           // Also subscribe to monitor
+           ctx.socket.send(JSON.stringify({ kind: "Monitor_Subscribe", club_id })); // Trigger client to sub? Or just auto-add? 
+           // Better to let client handle subscription after login
+       } else {
+           console.log(`❌ Admin Access Denied for ${club_id} (Invalid secret)`);
+           ctx.socket.send(JSON.stringify({ kind: "Club_Admin_Invalid", club_id }));
+       }
+   },
+   [EventType.Club_Admin_Valid]: (ctx, payload) => {}, // Outgoing only
+   [EventType.Club_Admin_Invalid]: (ctx, payload) => {}, // Outgoing only
 // ... existing handlers ...  // ... existing handlers ...
   [EventType.Event_Accepted]: (ctx, payload) => {
     const { club_id, event_id } = payload;
@@ -126,60 +222,56 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
         
         // Broadcast update to admins
         broadcastStateUpdate();
+        broadcastClubEvents(club_id); // Sync Club
     } catch (e) {
         console.error("Failed to update event status:", e);
         return;
     }
 
-    // 3. Forward to Club
-    const socket = getAnyClubSocket(club_id);
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            kind: "Event_Accepted",
-            club_id,
-            event_id
-        }));
-        console.log(`➡️ Forwarded Event_Accepted to club ${club_id}`);
-    } else {
-        console.warn(`Club ${club_id} not connected, cannot forward Event_Accepted`);
-    }
+    // 3. Forward to Club via Broadcast
+    broadcastToClub(club_id, {
+        kind: "Event_Accepted",
+        club_id,
+        event_id
+    });
+    console.log(`➡️ Broadcasted Event_Accepted to club ${club_id}`);
   },
   [EventType.Event_Rejected]: (ctx, payload) => {
     const { club_id, event_id, message } = payload;
-    console.log(`[Event] Event_Rejected for ${club_id} (Event: ${event_id}): ${message}`);
+    console.log(`[Event] Event_Rejected received for ${club_id} (Event: ${event_id})`);
 
     // 1. Validate
-    const event = dynamicDb.prepare("SELECT * FROM club_events WHERE club_id = ? AND event_id = ?").get(club_id, event_id);
-    if (!event) {
-        console.warn(`⚠️ Event ${event_id} for club ${club_id} not found.`);
+    if (!club_id || !event_id) {
+        console.warn(`⚠️ Missing data for Event_Rejected: `, payload);
         return;
     }
 
-    // 2. Delete Entry (As per requirement)
+    // 2. Reject Event (Soft Delete)
+    // "dont remove it immeditely ... remove only 24 hours after date"
     try {
-        dynamicDb.prepare("DELETE FROM club_events WHERE event_id = ?").run(event_id);
-        console.log(`❌ Event ${event_id} DELETED (Rejected)`);
+        const result = dynamicDb.prepare("UPDATE club_events SET status = 'rejected' WHERE club_id = ? AND event_id = ?").run(club_id, event_id);
         
-        // Broadcast update to admins
-        broadcastStateUpdate();
+        if (result.changes > 0) {
+            console.log(`✅ Event Rejected (Soft Delete): ${event_id}`);
+            // 3. Broadcast State
+            broadcastStateUpdate();
+            broadcastClubEvents(club_id);
+        } else {
+            console.warn(`⚠️ Event ${event_id} not found for rejection.`);
+        }
+
     } catch (e) {
-        console.error("Failed to delete event:", e);
-        return;
+        console.error("Failed to reject event:", e);
     }
 
-    // 3. Forward to Club
-    const socket = getAnyClubSocket(club_id);
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            kind: "Event_Rejected",
-            club_id,
-            event_id,
-            message
-        }));
-        console.log(`➡️ Forwarded Event_Rejected to club ${club_id}`);
-    } else {
-        console.warn(`Club ${club_id} not connected, cannot forward Event_Rejected`);
-    }
+    // 3. Forward to Club via Broadcast
+    broadcastToClub(club_id, {
+        kind: "Event_Rejected",
+        club_id,
+        event_id,
+        message // Forward the rejection reason
+    });
+    console.log(`➡️ Broadcasted Event_Rejected to club ${club_id}`);
   },
   [EventType.Event_Notification]: (ctx, payload) => {
     const { club_id, event_id, message } = payload;
@@ -194,19 +286,14 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
     
     // Notification: Status unchanged
 
-    // 3. Forward to Club
-    const socket = getAnyClubSocket(club_id);
-    if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-            kind: "Event_Notification",
-            club_id,
-            event_id,
-            message
-        }));
-        console.log(`➡️ Forwarded Event_Notification to club ${club_id}`);
-    } else {
-        console.warn(`Club ${club_id} not connected, cannot forward Event_Notification`);
-    }
+    // 3. Forward to Club via Broadcast
+    broadcastToClub(club_id, {
+        kind: "Event_Notification",
+        club_id,
+        event_id,
+        message
+    });
+    console.log(`➡️ Broadcasted Event_Notification to club ${club_id}`);
   },
   [EventType.Club_Creation_Accepted]: (ctx, payload) => {
     const { request_id } = payload;
@@ -413,6 +500,67 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
     broadcastMonitorUpdate(request.club_id);
   },
   
+  [EventType.Event_Created]: (ctx, payload) => {
+    const { club_id, event_id, event_data, timestamp } = payload;
+    console.log(`[Event] Event_Created received for ${club_id} (Event: ${event_id})`);
+
+    // 1. Validate
+    if (!club_id || !event_id || !event_data) {
+        console.warn(`⚠️ Missing data for Event_Created: `, payload);
+        return;
+    }
+
+    // 2. Insert or Replace Event
+    try {
+        const insertStmt = dynamicDb.prepare(`
+            INSERT OR REPLACE INTO club_events (event_id, club_id, event_data, status)
+            VALUES (?, ?, ?, 'pending')
+        `);
+        
+        // Ensure event_data includes the ID if not already
+        let eventDataObj = typeof event_data === 'string' ? JSON.parse(event_data) : event_data;
+        eventDataObj.event_id = event_id;
+
+        insertStmt.run(event_id, club_id, JSON.stringify(eventDataObj));
+        console.log(`✅ Event Created/Updated: ${event_id}`);
+        
+        // 3. Broadcast State
+        broadcastStateUpdate();
+        broadcastClubEvents(club_id);
+
+    } catch (e) {
+        console.error("Failed to create event:", e);
+    }
+  },
+
+  [EventType.Event_Deleted]: (ctx, payload) => {
+    const { club_id, event_id } = payload;
+    console.log(`[Event] Event_Deleted received for ${club_id} (Event: ${event_id})`);
+
+    // 1. Validate
+    if (!club_id || !event_id) {
+        console.warn(`⚠️ Missing data for Event_Deleted: `, payload);
+        return;
+    }
+
+    // 2. Delete Event
+    try {
+        const result = dynamicDb.prepare("DELETE FROM club_events WHERE club_id = ? AND event_id = ?").run(club_id, event_id);
+        
+        if (result.changes > 0) {
+            console.log(`✅ Event Deleted: ${event_id}`);
+            // 3. Broadcast State
+            broadcastStateUpdate();
+            broadcastClubEvents(club_id);
+        } else {
+            console.warn(`⚠️ Event ${event_id} not found for deletion.`);
+        }
+
+    } catch (e) {
+        console.error("Failed to delete event:", e);
+    }
+  },
+  
   // --- New Event Implementations ---
   [EventType.Admin_Access_Request]: (ctx, payload) => {
       const { council_id, name, roll_no, timestamp } = payload;
@@ -522,6 +670,13 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
           // --- MEMBER EXISTS: LOGIN ---
           console.log(`✅ Access Granted for Member: ${member.name}`);
           
+          // Update Last Login
+          try {
+             staticDb.prepare("UPDATE club_members SET last_login = ? WHERE member_id = ?").run(Date.now(), member.member_id);
+          } catch (e) {
+             console.error("Failed to update last_login", e);
+          }
+
           // Update Context
           ctx.role = "club";
           ctx.clubId = clubId;
@@ -529,6 +684,17 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
           
           // Register Socket
           registerMemberSocket(member.member_id, clubId, ctx.socket);
+
+          // Track Online Member
+          try {
+             dynamicDb.prepare(`
+               INSERT OR REPLACE INTO online_members (club_id, member_id, name, roll_no, joined_at)
+               VALUES (?, ?, ?, ?, ?)
+             `).run(clubId, member.member_id, member.name, member.roll_no, Date.now());
+             console.log(`✅ Tracked ${member.name} as ONLINE`);
+          } catch (e) {
+             console.error("Failed to track online member:", e);
+          }
           
           // Send Response
           if (ctx.socket.readyState === WebSocket.OPEN) {
@@ -544,10 +710,11 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
               }));
           }
           
-          broadcastMonitorUpdate(clubId);
-          
-          // Trigger Data Sync
-          performSync(clubId);
+            broadcastMonitorUpdate(clubId);
+            
+            // Trigger Data Sync
+            // performSync(clubId); // Old Sync
+            broadcastClubEvents(clubId); // New Sync
           
       } else {
           // --- MEMBER NOT FOUND ---
@@ -696,8 +863,27 @@ const handlers: Record<EventType, (context: ConnectionContext, payload: any) => 
       const club: any = staticDb.prepare("SELECT club_name FROM club_identity WHERE club_id = ?").get(club_id);
       
       if (club) {
+
           if (ctx.socket.readyState === WebSocket.OPEN) {
+              // Register as a guest listener for this club to receive broadcasts
+              const guestId = `guest_${uuidv4()}`;
+              registerMemberSocket(guestId, club_id, ctx.socket);
+              
+              // Update context
+              ctx.clubId = club_id;
+              ctx.memberId = guestId;
+
               ctx.socket.send(JSON.stringify({ kind: "Club_Details", club_id, club_name: club.club_name }));
+              
+              // Also send the events list DIRECTLY to this socket
+              // (Broadcast might miss it if it's not yet registered in the club room)
+              try {
+                  const eventsPayload = getClubEventsPayload(club_id);
+                  ctx.socket.send(JSON.stringify({ kind: "Club_Events_List", events: eventsPayload }));
+                  console.log(`📤 Sent direct event sync to client for ${club_id} (Registered as ${guestId})`);
+              } catch(e) {
+                  console.error("Failed to send direct event sync:", e);
+              }
           }
       } else {
           console.warn(`⚠️ Club Details not found for ${club_id}`);

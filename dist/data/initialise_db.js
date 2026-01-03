@@ -1,28 +1,28 @@
-import DatabaseConstructor, { Database } from "better-sqlite3";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
-
-export const staticDbChanged = true;
-
-const DB_PATH__STATIC = path.resolve(__dirname, "static.db");
-const DB_PATH__DYNAMIC = path.resolve(__dirname, "dynamic.db");
-
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.dynamicDb = exports.staticDb = exports.staticDbChanged = void 0;
+exports.intialiseDB = intialiseDB;
+const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
+const path_1 = __importDefault(require("path"));
+const uuid_1 = require("uuid");
+exports.staticDbChanged = true;
+const DB_PATH__STATIC = path_1.default.resolve(__dirname, "static.db");
+const DB_PATH__DYNAMIC = path_1.default.resolve(__dirname, "dynamic.db");
 // Export the two database instances
-export const staticDb = new DatabaseConstructor(DB_PATH__STATIC);
-export const dynamicDb = new DatabaseConstructor(DB_PATH__DYNAMIC);
-
+exports.staticDb = new better_sqlite3_1.default(DB_PATH__STATIC);
+exports.dynamicDb = new better_sqlite3_1.default(DB_PATH__DYNAMIC);
 // Enable Foreign Keys & WAL
-staticDb.pragma('foreign_keys = ON');
-staticDb.pragma('journal_mode = WAL');
-
-dynamicDb.pragma('foreign_keys = ON');
-dynamicDb.pragma('journal_mode = WAL');
-
-export function intialiseDB() {
-  console.log("✅ Databases initialized");
-
-  // --- Static DB (Identity & Access) ---
-  staticDb.exec(`
+exports.staticDb.pragma('foreign_keys = ON');
+exports.staticDb.pragma('journal_mode = WAL');
+exports.dynamicDb.pragma('foreign_keys = ON');
+exports.dynamicDb.pragma('journal_mode = WAL');
+function intialiseDB() {
+    console.log("✅ Databases initialized");
+    // --- Static DB (Identity & Access) ---
+    exports.staticDb.exec(`
     CREATE TABLE IF NOT EXISTS club_identity (
       club_id TEXT PRIMARY KEY,
       club_name TEXT NOT NULL,
@@ -61,31 +61,29 @@ export function intialiseDB() {
     CREATE INDEX IF NOT EXISTS idx_admin_council_id ON admin_access(council_id);
     CREATE INDEX IF NOT EXISTS idx_admin_roll_no ON admin_access(roll_no);
   `);
-  
-  // Add admin_secret column to existing club_identity tables (migration)
-  try {
-    staticDb.exec(`ALTER TABLE club_identity ADD COLUMN admin_secret TEXT`);
-    console.log("✅ Added admin_secret column to club_identity table");
-  } catch (e: any) {
-    // Column already exists or table doesn't exist yet (will be created with column)
-    if (e.message && !e.message.includes('duplicate column')) {
-      console.log("ℹ️ admin_secret column migration:", e.message);
+    // Add admin_secret column to existing club_identity tables (migration)
+    try {
+        exports.staticDb.exec(`ALTER TABLE club_identity ADD COLUMN admin_secret TEXT`);
+        console.log("✅ Added admin_secret column to club_identity table");
     }
-  }
-
-  // --- Dynamic DB (Events & Requests) ---
-  
-  // Add event_date column to club_events tables (migration)
-  try {
-    dynamicDb.exec(`ALTER TABLE club_events ADD COLUMN event_date TEXT GENERATED ALWAYS AS (json_extract(event_data, '$.event_date')) VIRTUAL`);
-    console.log("✅ Added event_date column to club_events table");
-  } catch (e: any) {
-    if (e.message && !e.message.includes('duplicate column')) {
-      console.log("ℹ️ event_date column migration:", e.message);
+    catch (e) {
+        // Column already exists or table doesn't exist yet (will be created with column)
+        if (e.message && !e.message.includes('duplicate column')) {
+            console.log("ℹ️ admin_secret column migration:", e.message);
+        }
     }
-  }
-
-  dynamicDb.exec(`
+    // --- Dynamic DB (Events & Requests) ---
+    // Add event_date column to club_events tables (migration)
+    try {
+        exports.dynamicDb.exec(`ALTER TABLE club_events ADD COLUMN event_date TEXT GENERATED ALWAYS AS (json_extract(event_data, '$.event_date')) VIRTUAL`);
+        console.log("✅ Added event_date column to club_events table");
+    }
+    catch (e) {
+        if (e.message && !e.message.includes('duplicate column')) {
+            console.log("ℹ️ event_date column migration:", e.message);
+        }
+    }
+    exports.dynamicDb.exec(`
     CREATE TABLE IF NOT EXISTS club_events (
       event_id TEXT PRIMARY KEY,
       club_id TEXT NOT NULL,
@@ -142,60 +140,55 @@ export function intialiseDB() {
     );
     CREATE INDEX IF NOT EXISTS idx_adm_req_council_id ON admin_access_requests(council_id);
   `);
-  
-  // Initialize STC council if it doesn't exist
-  try {
-    // Check if STC council already exists
-    const existingCouncil = staticDb.prepare("SELECT council_id FROM council WHERE council_name = ? AND council_secret = ?").get('STC', 'STCsecret101') as { council_id?: string } | undefined;
-    
-    if (!existingCouncil) {
-      // Insert STC council
-      const stcCouncilId = uuidv4();
-      staticDb.prepare(`
+    // Initialize STC council if it doesn't exist
+    try {
+        // Check if STC council already exists
+        const existingCouncil = exports.staticDb.prepare("SELECT council_id FROM council WHERE council_name = ? AND council_secret = ?").get('STC', 'STCsecret101');
+        if (!existingCouncil) {
+            // Insert STC council
+            const stcCouncilId = (0, uuid_1.v4)();
+            exports.staticDb.prepare(`
         INSERT INTO council (council_id, council_name, council_secret)
         VALUES (?, ?, ?)
       `).run(stcCouncilId, 'STC', 'STCsecret101');
-      
-      console.log(`✅ Inserted STC council with ID: ${stcCouncilId}`);
-      
-      // Insert admin access for Antrin Maji
-      try {
-        staticDb.prepare(`
+            console.log(`✅ Inserted STC council with ID: ${stcCouncilId}`);
+            // Insert admin access for Antrin Maji
+            try {
+                exports.staticDb.prepare(`
           INSERT INTO admin_access (council_id, name, roll_no, last_login)
           VALUES (?, ?, ?, ?)
         `).run(stcCouncilId, 'Antrin Maji', 'IMS24038', Date.now());
-        
-        console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
-      } catch (e: any) {
-        if (e.message && !e.message.includes('UNIQUE constraint')) {
-          console.error("❌ Failed to insert admin access:", e);
+                console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
+            }
+            catch (e) {
+                if (e.message && !e.message.includes('UNIQUE constraint')) {
+                    console.error("❌ Failed to insert admin access:", e);
+                }
+            }
         }
-      }
-    } else {
-      // Check if Antrin Maji admin access exists
-      const existingAdmin = staticDb.prepare("SELECT roll_no FROM admin_access WHERE council_id = ? AND roll_no = ?").get(existingCouncil.council_id, 'IMS24038') as { roll_no?: string } | undefined;
-      
-      if (!existingAdmin) {
-        try {
-          staticDb.prepare(`
+        else {
+            // Check if Antrin Maji admin access exists
+            const existingAdmin = exports.staticDb.prepare("SELECT roll_no FROM admin_access WHERE council_id = ? AND roll_no = ?").get(existingCouncil.council_id, 'IMS24038');
+            if (!existingAdmin) {
+                try {
+                    exports.staticDb.prepare(`
             INSERT INTO admin_access (council_id, name, roll_no, last_login)
             VALUES (?, ?, ?, ?)
           `).run(existingCouncil.council_id, 'Antrin Maji', 'IMS24038', Date.now());
-          
-          console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
-        } catch (e: any) {
-          if (e.message && !e.message.includes('UNIQUE constraint')) {
-            console.error("❌ Failed to insert admin access:", e);
-          }
+                    console.log(`✅ Inserted admin access for Antrin Maji (IMS24038) in STC council`);
+                }
+                catch (e) {
+                    if (e.message && !e.message.includes('UNIQUE constraint')) {
+                        console.error("❌ Failed to insert admin access:", e);
+                    }
+                }
+            }
+            console.log(`ℹ️ STC council already exists, skipping insertion`);
         }
-      }
-      console.log(`ℹ️ STC council already exists, skipping insertion`);
     }
-  } catch (e: any) {
-    console.error("❌ Failed to initialize STC council:", e);
-  }
-  
-  console.log("✅ Database initialization complete");
-  
-  return { staticDb, dynamicDb };
+    catch (e) {
+        console.error("❌ Failed to initialize STC council:", e);
+    }
+    console.log("✅ Database initialization complete");
+    return { staticDb: exports.staticDb, dynamicDb: exports.dynamicDb };
 }

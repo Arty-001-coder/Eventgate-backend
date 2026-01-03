@@ -4,7 +4,6 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
-    "simulate": "ts-node src/simulate_club.ts",
     "build": "npm rebuild better-sqlite3 && tsc",
     "postinstall": "npm rebuild better-sqlite3",
     "start": "node dist/index.js",

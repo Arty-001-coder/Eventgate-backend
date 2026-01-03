@@ -4,6 +4,7 @@ import { initialiseAuth } from "./clubs/auth";
 import { initialiseState } from "./clubs/state";
 // import { initialiseAdmin } from "./clubs/admin";
 import { startServer } from "./network/port";
+import { startKeepalive } from "./keepalive";
 
 async function bootstrap() {
   console.log("🚀 Starting Central Server...");
@@ -25,6 +26,9 @@ async function bootstrap() {
 
   // 4. Start Server
   startServer();
+
+  // 5. Start Keepalive Service (pings own health endpoint to prevent Render spin-down)
+  startKeepalive();
 }
 
 bootstrap().catch((err) => {

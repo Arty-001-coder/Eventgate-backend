@@ -6,6 +6,7 @@ const auth_1 = require("./clubs/auth");
 const state_1 = require("./clubs/state");
 // import { initialiseAdmin } from "./clubs/admin";
 const port_1 = require("./network/port");
+const keepalive_1 = require("./keepalive");
 async function bootstrap() {
     console.log("🚀 Starting Central Server...");
     // 1. Initialise Database
@@ -22,6 +23,8 @@ async function bootstrap() {
     console.log("✅ Device status reset (all offline)");
     // 4. Start Server
     (0, port_1.startServer)();
+    // 5. Start Keepalive Service (pings own health endpoint to prevent Render spin-down)
+    (0, keepalive_1.startKeepalive)();
 }
 bootstrap().catch((err) => {
     console.error("❌ Fatal startup error:", err);
